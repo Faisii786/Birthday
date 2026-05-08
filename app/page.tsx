@@ -234,6 +234,11 @@ export default function Home() {
   const [burstKey, setBurstKey] = useState(0);
   const [motionOk, setMotionOk] = useState(true);
   const [parallax, setParallax] = useState({ x: 0, y: 0 });
+  /** `null` = still checking whether /birthday.mp3 exists */
+  const [fileAudioOk, setFileAudioOk] = useState<boolean | null>(null);
+  const [audioStarted, setAudioStarted] = useState(false);
+
+  const audioRef = useRef<HTMLAudioElement>(null);
 
   useEffect(() => {
     setNow(new Date());
@@ -247,6 +252,63 @@ export default function Home() {
     update();
     mq.addEventListener("change", update);
     return () => mq.removeEventListener("change", update);
+  }, []);
+
+  useEffect(() => {
+    const el = audioRef.current;
+    if (!el) return;
+    const onReady = () => setFileAudioOk(true);
+    const onFail = () => setFileAudioOk(false);
+    el.addEventListener("canplaythrough", onReady);
+    el.addEventListener("error", onFail);
+    el.load();
+    return () => {
+      el.removeEventListener("canplaythrough", onReady);
+      el.removeEventListener("error", onFail);
+    };
+  }, []);
+
+  /** Start MP3 as soon as it can play (may be blocked until user interacts). */
+  useEffect(() => {
+    if (fileAudioOk !== true) return;
+    const el = audioRef.current;
+    if (!el) return;
+    el.volume = 0.38;
+    let cancelled = false;
+    void el.play().then(() => {
+      if (!cancelled) setAudioStarted(true);
+    }).catch(() => {});
+    return () => {
+      cancelled = true;
+    };
+  }, [fileAudioOk]);
+
+  /** If autoplay was blocked, start on first tap anywhere. */
+  useEffect(() => {
+    if (fileAudioOk !== true || audioStarted) return;
+    const onFirstPointer = () => {
+      const el = audioRef.current;
+      if (!el) return;
+      el.volume = 0.38;
+      void el.play().then(() => setAudioStarted(true)).catch(() => {});
+    };
+    window.addEventListener("pointerdown", onFirstPointer, {
+      once: true,
+      capture: true,
+    });
+    return () => {
+      window.removeEventListener("pointerdown", onFirstPointer, true);
+    };
+  }, [fileAudioOk, audioStarted]);
+
+  useEffect(() => {
+    return () => {
+      const el = audioRef.current;
+      if (el) {
+        el.pause();
+        el.currentTime = 0;
+      }
+    };
   }, []);
 
   const copy = useMemo(() => {
@@ -285,6 +347,15 @@ export default function Home() {
       onPointerMove={onPointerMove}
       onPointerLeave={onPointerLeave}
     >
+      <audio
+        ref={audioRef}
+        className="hidden"
+        src="/birthday.mp3"
+        loop
+        preload="auto"
+        playsInline
+        autoPlay
+      />
       <ConfettiCanvas burstKey={burstKey} enabled={motionOk} />
       <StarField />
 
