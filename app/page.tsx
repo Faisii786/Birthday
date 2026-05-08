@@ -1,63 +1,91 @@
-import Image from "next/image";
+"use client";
+
+import { useEffect, useMemo, useState } from "react";
+
+const BIRTH = { year: 2003, month: 4, day: 8 } as const; // May = 4 (0-indexed)
+
+function isBirthdayToday(d: Date) {
+  return d.getMonth() === BIRTH.month && d.getDate() === BIRTH.day;
+}
+
+function ageOnDate(d: Date) {
+  let age = d.getFullYear() - BIRTH.year;
+  const hadBirthday =
+    d.getMonth() > BIRTH.month ||
+    (d.getMonth() === BIRTH.month && d.getDate() >= BIRTH.day);
+  if (!hadBirthday) age -= 1;
+  return age;
+}
 
 export default function Home() {
+  const [now, setNow] = useState<Date | null>(null);
+
+  useEffect(() => {
+    setNow(new Date());
+    const id = window.setInterval(() => setNow(new Date()), 60_000);
+    return () => window.clearInterval(id);
+  }, []);
+
+  const copy = useMemo(() => {
+    if (!now) return { title: "Nimra", subtitle: "8 May · since 2003" };
+    const birthday = isBirthdayToday(now);
+    const age = ageOnDate(now);
+    return {
+      title: birthday ? "Happy Birthday, Nimra" : "For Nimra",
+      subtitle: birthday
+        ? `Wishing you a beautiful day — ${age} wonderful years · 8 May 2003`
+        : `With love on your journey — ${age} years young · born 8 May 2003`,
+    };
+  }, [now]);
+
   return (
-    <div className="flex flex-col flex-1 items-center justify-center bg-zinc-50 font-sans dark:bg-black">
-      <main className="flex flex-1 w-full max-w-3xl flex-col items-center justify-between py-32 px-16 bg-white dark:bg-black sm:items-start">
-        <Image
-          className="dark:invert"
-          src="/next.svg"
-          alt="Next.js logo"
-          width={100}
-          height={20}
-          priority
-        />
-        <div className="flex flex-col items-center gap-6 text-center sm:items-start sm:text-left">
-          <h1 className="max-w-xs text-3xl font-semibold leading-10 tracking-tight text-black dark:text-zinc-50">
-            To get started, edit the page.tsx file.
-          </h1>
-          <p className="max-w-md text-lg leading-8 text-zinc-600 dark:text-zinc-400">
-            Looking for a starting point or more instructions? Head over to{" "}
-            <a
-              href="https://vercel.com/templates?framework=next.js&utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-              className="font-medium text-zinc-950 dark:text-zinc-50"
-            >
-              Templates
-            </a>{" "}
-            or the{" "}
-            <a
-              href="https://nextjs.org/learn?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-              className="font-medium text-zinc-950 dark:text-zinc-50"
-            >
-              Learning
-            </a>{" "}
-            center.
-          </p>
-        </div>
-        <div className="flex flex-col gap-4 text-base font-medium sm:flex-row">
-          <a
-            className="flex h-12 w-full items-center justify-center gap-2 rounded-full bg-foreground px-5 text-background transition-colors hover:bg-[#383838] dark:hover:bg-[#ccc] md:w-[158px]"
-            href="https://vercel.com/new?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
+    <div className="relative flex min-h-full flex-1 flex-col overflow-hidden bg-[#faf6f3] text-zinc-900 dark:bg-zinc-950 dark:text-zinc-50">
+      <div
+        aria-hidden
+        className="pointer-events-none absolute inset-0 bg-[radial-gradient(ellipse_120%_80%_at_50%_-20%,rgba(251,113,133,0.35),transparent),radial-gradient(ellipse_80%_60%_at_100%_50%,rgba(167,139,250,0.2),transparent),radial-gradient(ellipse_70%_50%_at_0%_80%,rgba(253,224,71,0.18),transparent)] dark:bg-[radial-gradient(ellipse_120%_80%_at_50%_-20%,rgba(190,24,93,0.35),transparent),radial-gradient(ellipse_80%_60%_at_100%_50%,rgba(109,40,217,0.22),transparent),radial-gradient(ellipse_70%_50%_at_0%_80%,rgba(202,138,4,0.12),transparent)]"
+      />
+      <div
+        aria-hidden
+        className="pointer-events-none absolute -left-24 top-24 h-72 w-72 rounded-full bg-rose-200/40 blur-3xl dark:bg-rose-900/30"
+      />
+      <div
+        aria-hidden
+        className="pointer-events-none absolute -right-16 bottom-20 h-64 w-64 rounded-full bg-violet-200/35 blur-3xl dark:bg-violet-900/25"
+      />
+
+      <main className="relative z-10 flex flex-1 flex-col items-center justify-center px-6 py-20 text-center sm:px-10">
+        <p className="mb-4 text-sm font-medium uppercase tracking-[0.2em] text-rose-700/90 dark:text-rose-300/90">
+          8 May
+        </p>
+        <h1 className="max-w-2xl text-balance font-serif text-4xl font-medium leading-tight tracking-tight sm:text-5xl sm:leading-tight">
+          {copy.title}
+        </h1>
+        <p className="mt-6 max-w-md text-pretty text-base leading-relaxed text-zinc-600 dark:text-zinc-400 sm:text-lg">
+          {copy.subtitle}
+        </p>
+        <p className="mt-10 max-w-lg text-pretty text-sm leading-relaxed text-zinc-500 dark:text-zinc-500">
+          Here&apos;s to laughter, calm mornings, and all the good things you
+          bring into the world. May this year feel gentle, bright, and entirely
+          yours.
+        </p>
+
+        <div
+          aria-hidden
+          className="mt-14 flex gap-3 text-rose-400/80 dark:text-rose-400/50"
+        >
+          <span className="inline-block animate-pulse text-2xl">✦</span>
+          <span
+            className="inline-block animate-pulse text-2xl"
+            style={{ animationDelay: "0.2s" }}
           >
-            <Image
-              className="dark:invert"
-              src="/vercel.svg"
-              alt="Vercel logomark"
-              width={16}
-              height={16}
-            />
-            Deploy Now
-          </a>
-          <a
-            className="flex h-12 w-full items-center justify-center rounded-full border border-solid border-black/[.08] px-5 transition-colors hover:border-transparent hover:bg-black/[.04] dark:border-white/[.145] dark:hover:bg-[#1a1a1a] md:w-[158px]"
-            href="https://nextjs.org/docs?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
+            ✦
+          </span>
+          <span
+            className="inline-block animate-pulse text-2xl"
+            style={{ animationDelay: "0.4s" }}
           >
-            Documentation
-          </a>
+            ✦
+          </span>
         </div>
       </main>
     </div>
