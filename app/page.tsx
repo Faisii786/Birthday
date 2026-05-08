@@ -10,6 +10,8 @@ import {
 
 const BIRTH = { year: 2003, month: 4, day: 8 } as const;
 
+const CELEBRANT = "Nimra";
+
 function isBirthdayToday(d: Date) {
   return d.getMonth() === BIRTH.month && d.getDate() === BIRTH.day;
 }
@@ -219,7 +221,7 @@ function StarField() {
 }
 
 function splitTitle(title: string) {
-  const marker = "Nimra";
+  const marker = CELEBRANT;
   const idx = title.indexOf(marker);
   if (idx === -1) return { before: title, highlight: null as string | null, after: "" };
   return {
@@ -230,6 +232,7 @@ function splitTitle(title: string) {
 }
 
 export default function Home() {
+  const [celebrationStarted, setCelebrationStarted] = useState(false);
   const [now, setNow] = useState<Date | null>(null);
   const [burstKey, setBurstKey] = useState(0);
   const [motionOk, setMotionOk] = useState(true);
@@ -239,12 +242,29 @@ export default function Home() {
   const [audioStarted, setAudioStarted] = useState(false);
 
   const audioRef = useRef<HTMLAudioElement>(null);
+  const audioStartedRef = useRef(false);
+  const celebrationLiveRef = useRef(false);
+
+  const tryPlayAudio = useCallback(async () => {
+    if (!celebrationLiveRef.current) return;
+    const el = audioRef.current;
+    if (!el || audioStartedRef.current) return;
+    el.volume = 0.38;
+    try {
+      await el.play();
+      audioStartedRef.current = true;
+      setAudioStarted(true);
+    } catch {
+      /* not ready yet or autoplay blocked — will retry on interaction / poll */
+    }
+  }, []);
 
   useEffect(() => {
+    if (!celebrationStarted) return;
     setNow(new Date());
     const id = window.setInterval(() => setNow(new Date()), 60_000);
     return () => window.clearInterval(id);
-  }, []);
+  }, [celebrationStarted]);
 
   useEffect(() => {
     const mq = window.matchMedia("(prefers-reduced-motion: reduce)");
@@ -254,55 +274,95 @@ export default function Home() {
     return () => mq.removeEventListener("change", update);
   }, []);
 
+  const handleStartCelebration = useCallback(() => {
+    celebrationLiveRef.current = true;
+    setCelebrationStarted(true);
+  }, []);
+
+  /** `canplay` fires much sooner than `canplaythrough` (big MP3s were delaying start). */
   useEffect(() => {
+    if (!celebrationStarted) return;
     const el = audioRef.current;
     if (!el) return;
-    const onReady = () => setFileAudioOk(true);
-    const onFail = () => setFileAudioOk(false);
-    el.addEventListener("canplaythrough", onReady);
+    let dead = false;
+    const onCanPlay = () => {
+      if (dead) return;
+      setFileAudioOk(true);
+      void tryPlayAudio();
+    };
+    const onFail = () => {
+      if (dead) return;
+      setFileAudioOk(false);
+    };
+    el.addEventListener("canplay", onCanPlay);
     el.addEventListener("error", onFail);
     el.load();
     return () => {
-      el.removeEventListener("canplaythrough", onReady);
+      dead = true;
+      el.removeEventListener("canplay", onCanPlay);
       el.removeEventListener("error", onFail);
     };
-  }, []);
+  }, [celebrationStarted, tryPlayAudio]);
 
-  /** Start MP3 as soon as it can play (may be blocked until user interacts). */
+  /** First paint after Start: your tap counts as the user gesture for audio. */
   useEffect(() => {
-    if (fileAudioOk !== true) return;
-    const el = audioRef.current;
-    if (!el) return;
-    el.volume = 0.38;
-    let cancelled = false;
-    void el.play().then(() => {
-      if (!cancelled) setAudioStarted(true);
-    }).catch(() => {});
+    if (!celebrationStarted) return;
+    void tryPlayAudio();
+    const t = window.setTimeout(() => void tryPlayAudio(), 0);
+    const t2 = window.setTimeout(() => void tryPlayAudio(), 120);
     return () => {
-      cancelled = true;
+      window.clearTimeout(t);
+      window.clearTimeout(t2);
     };
-  }, [fileAudioOk]);
+  }, [celebrationStarted, tryPlayAudio]);
 
-  /** If autoplay was blocked, start on first tap anywhere. */
+  /** Keep trying briefly — mobile often needs a moment after `canplay`. */
   useEffect(() => {
-    if (fileAudioOk !== true || audioStarted) return;
-    const onFirstPointer = () => {
-      const el = audioRef.current;
-      if (!el) return;
-      el.volume = 0.38;
-      void el.play().then(() => setAudioStarted(true)).catch(() => {});
+    if (!celebrationStarted || fileAudioOk !== true) return;
+    let n = 0;
+    const id = window.setInterval(() => {
+      if (audioStartedRef.current) {
+        clearInterval(id);
+        return;
+      }
+      if (++n > 40) {
+        clearInterval(id);
+        return;
+      }
+      void tryPlayAudio();
+    }, 250);
+    return () => clearInterval(id);
+  }, [celebrationStarted, fileAudioOk, tryPlayAudio]);
+
+  /** Any tap/scroll attempt until audio actually plays (fixes “gesture before ready”). */
+  useEffect(() => {
+    if (!celebrationStarted || audioStarted) return;
+    const unlock = () => {
+      void tryPlayAudio();
     };
-    window.addEventListener("pointerdown", onFirstPointer, {
-      once: true,
-      capture: true,
-    });
+    document.addEventListener("pointerdown", unlock, true);
+    document.addEventListener("touchend", unlock, true);
+    document.addEventListener("click", unlock, true);
     return () => {
-      window.removeEventListener("pointerdown", onFirstPointer, true);
+      document.removeEventListener("pointerdown", unlock, true);
+      document.removeEventListener("touchend", unlock, true);
+      document.removeEventListener("click", unlock, true);
     };
-  }, [fileAudioOk, audioStarted]);
+  }, [celebrationStarted, audioStarted, tryPlayAudio]);
+
+  useEffect(() => {
+    if (!celebrationStarted) return;
+    const onVis = () => {
+      if (document.visibilityState === "visible") void tryPlayAudio();
+    };
+    document.addEventListener("visibilitychange", onVis);
+    return () => document.removeEventListener("visibilitychange", onVis);
+  }, [celebrationStarted, tryPlayAudio]);
 
   useEffect(() => {
     return () => {
+      celebrationLiveRef.current = false;
+      audioStartedRef.current = false;
       const el = audioRef.current;
       if (el) {
         el.pause();
@@ -312,11 +372,13 @@ export default function Home() {
   }, []);
 
   const copy = useMemo(() => {
-    if (!now) return { title: "Nimra", subtitle: "A quiet wish for you." };
+    if (!now) return { title: CELEBRANT, subtitle: "A quiet wish for you." };
     const birthday = isBirthdayToday(now);
     const age = ageOnDate(now);
     return {
-      title: birthday ? "Happy Birthday, Nimra" : "For Nimra, with care",
+      title: birthday
+        ? `Happy Birthday, ${CELEBRANT}`
+        : `For ${CELEBRANT}, with care`,
       subtitle: birthday
         ? `May your day feel unhurried and kind — ${age} gentle years, and counting.`
         : `Whenever you read this, I hope it finds you well — ${age} beautiful years of you.`,
@@ -338,8 +400,40 @@ export default function Home() {
   const onPointerLeave = useCallback(() => setParallax({ x: 0, y: 0 }), []);
 
   const triggerBurst = useCallback(() => {
+    void tryPlayAudio();
     setBurstKey((k) => k + 1);
-  }, []);
+  }, [tryPlayAudio]);
+
+  if (!celebrationStarted) {
+    return (
+      <div className="relative flex min-h-dvh flex-1 flex-col overflow-x-clip overflow-y-auto bg-[#faf6f3] text-zinc-900 dark:bg-zinc-950 dark:text-zinc-50">
+        <div
+          aria-hidden
+          className="pointer-events-none absolute inset-0 z-0 bg-[radial-gradient(ellipse_120%_90%_at_50%_-20%,rgba(251,113,133,0.38),transparent_55%),radial-gradient(ellipse_85%_65%_at_100%_45%,rgba(167,139,250,0.22),transparent_50%)] dark:bg-[radial-gradient(ellipse_120%_90%_at_50%_-20%,rgba(190,24,93,0.35),transparent_55%),radial-gradient(ellipse_85%_65%_at_100%_45%,rgba(109,40,217,0.25),transparent_50%)]"
+        />
+        <main className="relative z-10 flex flex-1 flex-col items-center justify-center px-6 py-16 text-center sm:px-10">
+          <p className="text-xs font-semibold uppercase tracking-[0.3em] text-rose-700/95 dark:text-rose-300/95 sm:text-sm">
+            A little something for you
+          </p>
+          <h1 className="mt-6 max-w-lg text-balance font-medium leading-tight text-[clamp(1.75rem,5vw+0.5rem,2.75rem)] tracking-tight [font-family:var(--font-display-serif),serif] sm:mt-8">
+            Hi, {CELEBRANT}
+          </h1>
+          <p className="mt-5 max-w-sm text-pretty text-base leading-relaxed text-zinc-600 dark:text-zinc-400 sm:text-lg">
+            Take a breath, then tap Start — a small celebration is waiting on
+            the other side.
+          </p>
+          <button
+            type="button"
+            onClick={handleStartCelebration}
+            className="celebrate-rise mt-12 inline-flex min-h-12 min-w-[10.5rem] items-center justify-center rounded-full border border-rose-400/90 bg-rose-500 px-10 py-3.5 text-sm font-semibold text-white shadow-[0_10px_36px_rgba(244,114,182,0.35)] transition-[transform,box-shadow,background-color] duration-200 ease-out hover:bg-rose-600 hover:shadow-[0_14px_44px_rgba(244,114,182,0.42)] active:scale-[0.98] dark:border-rose-400/50 dark:bg-rose-600 dark:hover:bg-rose-500"
+            aria-label="Start the celebration"
+          >
+            Start
+          </button>
+        </main>
+      </div>
+    );
+  }
 
   return (
     <div
@@ -354,7 +448,6 @@ export default function Home() {
         loop
         preload="auto"
         playsInline
-        autoPlay
       />
       <ConfettiCanvas burstKey={burstKey} enabled={motionOk} />
       <StarField />
